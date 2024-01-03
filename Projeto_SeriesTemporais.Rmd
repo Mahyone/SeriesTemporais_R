@@ -7,7 +7,7 @@ output: word_document
 
 
 ```{r setwd, echo=FALSE, include=FALSE}
-setwd("C://Users/Remessa Online/Desktop/May/PersonnalStuff/FGV/Classes/Analise_Series_Temporais/Projeto_Conclusao/")
+setwd("")
 ```
 
 
