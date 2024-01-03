@@ -1,0 +1,346 @@
+---
+title: "Análise de Séries Temporais"
+author: "Mayara Yonemura"
+date: '2022-07-28'
+output: word_document
+---
+
+
+```{r setwd, echo=FALSE, include=FALSE}
+setwd("C://Users/Remessa Online/Desktop/May/PersonnalStuff/FGV/Classes/Analise_Series_Temporais/Projeto_Conclusao/")
+```
+
+
+# **Projeto de Conclusão da Disciplina Análise de Séries Temporais**
+<br>
+Grupo : 
+Mayara Yonemura - A58337141
+
+
+<br><br>
+# **Briefing**
+##### Os dados do arquivo "Fertilizantes", disponibilizado pela FGV, para a disciplina de Análise de Séries Temporais,  contempla a entrega de fertilizantes, produzidos no Brasil, ao mercado em mil toneladas no período mensal de janeiro de 1998 a setembro de 2021.  
+A fonte dos dados é o sítio da Associação Nacional para Difusão de Adubos –ANDA (http://anda.org.br/estatisticas/).
+
+
+
+<br><br>
+## *Carregando as bibliotecas*
+```{r bibliotecas, warning=FALSE, message=FALSE, include=FALSE}
+library(knitr)
+library(rmarkdown)
+library(htmltools)
+library(gridExtra)
+
+library(readxl)
+library(sf)
+library(spatstat)
+library(tidyverse)
+
+library(tseries)
+library(stats)
+library(ggplot2)
+library(ggthemes)
+library(ggmap)
+library(fpp2)
+library(BETS)
+library(urca)
+library(TSA)
+library(forecast)
+library(MVar)
+library(TSstudio)
+library(bayesforecast)
+library(NlinTS) 
+```
+
+<br><br>
+```{r importando dataset, echo=FALSE}
+fertilizantes <- read_excel("Fertilizantes.xlsx")
+View(fertilizantes)
+```
+
+<br>
+```{r head fertilizantes}
+head(fertilizantes)
+```
+
+<br>
+*Podemos observar pelo head que a frequência temporal é mensal (f = 12).*
+
+
+<br>
+-- Dimensões do Dataset - linhas e colunas, respectivamente:
+```{r dimensoes fertilizantes, echo=FALSE}
+dim(fertilizantes)
+```
+<br>
+Contagem de dados nulos por coluna:
+``` {r dados nulos}
+colSums(is.na(fertilizantes)) 
+```
+
+<br>
+Datatypes do Dataset:
+```{r dtypes fertilizantes}
+str(fertilizantes)
+```
+<br>
+Como a classe de 'fertilizantes' é numérica, para Time Series precisa transformar em formato ts:
+```{r transformando em timeseries, echo=FALSE}
+##  frequency : refere-se a frequência da serie temporal, 12 por ser mensal 
+##  start : refere-se ao ano e mês de inícios da serie
+fertilizantests <- ts(fertilizantes$fertilizantes, frequency = 12, start = c(1998, 1))   
+class(fertilizantests)
+```
+<br>
+Visualização do formato da ts após transformação (númerico > timeseries)
+```{r view ts fertilizantes, echo=FALSE}
+fertilizantests
+```
+
+<br>
+Plot da Serie Temporal
+```{r autoplot, echo=FALSE}
+autoplot(fertilizantests, lwd = 1, col = "black") + 
+  ggtitle("Produção de Fertilizantes no Brasil - por 1000 toneladas") + 
+  ylab("Produção de Fertilizantes") + 
+  xlab("Ano") + 
+  theme_calc()
+```
+<br>
+Visualização da Serie Temporal por Boxplot (sazonalidade):
+```{r view boxplot fertilizantes, echo=FALSE}
+boxplot(fertilizantests ~ cycle(fertilizantests),
+        col='green',
+        xlba="Mês",
+        ylab="Produção",
+        main = "Boxplot da Produção de Fertilizantes"
+        )
+```
+<br>
+*Com a visualização do Plot da Série de Fertilizantes, podemos ter alguns insights interessantes:*
+*- A produção está crescendo (tendência de alta) ano após ano, e não tivemos impacto de produção durante o período da pandemia covid-19 (após 2020 até o momento que temos os dados mapeados - Set/21);*
+*- Há um padrão de comportamento de produção, com picos e vales, repetidamente, durante todo o período, no qual observamos os ciclos da serie (padrões de comportamento com certa regularidade, no longo prazo);*
+*- Dentro do ciclo, podemos observar a sazonlidade entre os meses (picos e vales no período de 1 ano, sendo o 1º semestre do ano o mais fraco (vales) e o 2º semestre mais forte (picos) - observados pelo Boxplot;*
+*- Aparentemente, estamos visualizando uma serie do tipo Multiplicativa (ou heterocedástica - variância não é constante), pois os comprimentos das linha entre o máximo e o mínimo (sazonalidade) fica maior ao passar dos anos. Exemplo:  No ano de 2000, a linha atravessa uma banda (1000 a 2000), mas em 2020, atravessa duas bandas (2000 a 4000);*
+
+<br><br>
+Visualização da Série Temporal a partir de Janeiro de 2008, com destaque para a janela temporal da pandemia (a partir de Março de 2020).
+```{r janela fertilizantes, echo=FALSE}
+janelafertilizantes <- window(fertilizantests, 
+                              frequency = 12, 
+                              start = c(2008, 1)    ## Janeiro de 2008
+                              )
+
+janelafertilizantescovid <- window(fertilizantests, 
+                                   frequency = 12, 
+                                   start = c(2020,3)     ## Março de 2020, inicio da pandemia
+                                   )
+
+
+autoplot(janelafertilizantes, series = "Janela > 2008", lwd = 1.2) + 
+  autolayer(janelafertilizantescovid, series = "Janela Covid", lwd = 2) +
+  labs(x = "Ano", 
+       y = "Produção de Fertilizantes (por 1000 toneladas)",
+       title = "Produção de Fertilizantes - por 1000 toneladas")
+
+```
+
+<br>
+**Decomposição da série**   
+- Para encontrarmos o melhor modelo, o fato decisivo será o erro encontrado em ambos os modelos, sendo o melhor modelo aquele que possui o menor erro. 
+```{r decomposicao fertilizantes, echo=FALSE}
+decomposefertilizantes_add <- decompose(janelafertilizantes, type = c("additive"))
+autoplot(decomposefertilizantes_add)
+
+decomposefertilizantes_multi <- decompose(janelafertilizantes, type = c("multiplicative"))
+autoplot(decomposefertilizantes_multi)
+```
+<br>
+Visualização da série da janela dos dados (a partir de 2008) com a tendência:
+```{r plot fertilizantes tendencia, echo=FALSE, warning=FALSE, message=FALSE}
+autoplot(janelafertilizantes, series = "Original", lwd = 1.2) + 
+  autolayer(decomposefertilizantes_add$trend, series = "Tendência", lwd = 2) +
+  labs(x = "Ano", 
+       y = "Produção de Fertilizantes (por 1000 toneladas)",
+       title = "Produção de Fertilizantes - por 1000 toneladas")
+```
+
+<br><br>
+
+**Análise exploratória da Sazonalidade da Série**   
+<br>
+Plot da Sazonalidade da série:
+```{r dessazonalidade fertilizantes, echo=FALSE}
+fertilizantes_sazonal <- janelafertilizantes - decomposefertilizantes_add$seasonal
+autoplot(fertilizantes_sazonal) + 
+  ggtitle("Plot da Sazonalidade da Serie") + 
+  xlab("Ano")
+```
+
+
+<br>
+Dessazonalidade da série (removendo a sazonalidade da serie original): 
+```{r dessazonalidade plot, echo=FALSE}
+decomposefertilizantes_add_deseasonal <- decompose(fertilizantes_sazonal, type = c("additive"))
+autoplot(decomposefertilizantes_add_deseasonal)
+```
+
+<br>
+*Ao retirar a sazonalidade da série, reduzimos significativamente o erro do modelo (nos plots acima, o gráfico que demonstra sazonalidade está em escala de 0.75 a 1.5, e removendo a sazonalidade, o mesmo gráfico é plotado em escala menores - 0 com 13 casas decimais);*
+
+<br>
+Métodos de Holt-Winters (HW)  
+- Aditivo
+```{r hw fertilizantes add, echo=FALSE}
+## level : refere-se ao intervalo de confiança
+
+## predição
+fitHW_add <- hw(janelafertilizantes, seasonal = "additive", h = 24, level = 70)
+
+ ## modelo    fitHW_add$fitted  
+
+autoplot(janelafertilizantes) + 
+  autolayer(fitHW_add$fitted, series = "HW Aditivo") +
+  autolayer(fitHW_add, series = "Predição HW Aditivo - h = 24") +
+  ggtitle("Produção de Fertilizantes RMSP - HW Aditivo") +
+  xlab("Ano")
+```
+
+<br>
+- Multiplicativo
+```{r hw fertilizantes  mutli, echo=FALSE}
+## predição
+fitHW_multi <- hw(janelafertilizantes, seasonal = "multiplicative", h = 24)
+ ## modelo  fitHW_multi$fitted  
+
+autoplot(janelafertilizantes) + 
+  autolayer(fitHW_multi$fitted, series = "HW Multiplicativo") +
+  autolayer(fitHW_multi, series = "Predição HWM - h = 24") +
+  ggtitle("Produção de Fertilizantes RMSP - HWm") +
+  xlab("Ano")
+```
+
+
+<br>
+- Fator de Decisão para escolha do melhor modelo : menor erro (RMSE)
+```{r erros HW, echo=FALSE}
+accuracy(fitHW_add)
+accuracy(fitHW_multi)
+```
+
+*Podemos observar pelos números do RMSE que o modelo de Holt Winters Aditivo possui o menor erro, portanto, este é o melhor modelo para predição da serie temporal de fertilizantes (aditivo 280 x multiplicativo 300).*
+
+<br>
+Treinando Modelo de Predição da Serie Teporal pelo modelo Aditivo:
+```{r train model ts fertilizantes, echo=FALSE}
+treinofertilizantes <- window(janelafertilizantes, end = c(2020,2))
+testefertilizantes <- window(janelafertilizantes, start = c(2020,3))
+
+mtsfertilizantes <- hw(treinofertilizantes, seasonal = 'additive', h = 36, level = 70)
+
+
+autoplot(treinofertilizantes) + 
+  autolayer(mtsfertilizantes, series = "Previsão HW Aditivo") + 
+  autolayer(testefertilizantes, series = "Realizado") + 
+  xlab("Ano") + 
+  ylab("Produção de Fertilizantes") + 
+  ggtitle("Produção de Fertilizantes RMSP") +
+  guides(colour = guide_legend(title = "Séries"))
+```
+<br>
+*O período selecionado foi intencional para entender o comportamento da série (reflexo da pandemia), devido ao insight inicial de que não houve efeito na produção, e podemos observar que, de fato, o realizado ultrapassou o modelo preditivo, para ambos os lados, superou o máximo e o mínimo (por pouco desvio das linhas, observado no plot) durante a pandemia; dessa forma, concluímos que a pandemia, para a produção de fertilizantes, não teve impacto negativo pois se manteve dentro das bandas preditoras da sazonalidade.*
+
+<br><br>
+**Modelo SARIMA:**
+```{r autoarima fertilizantes, echo=FALSE}
+modeloarima <- auto.arima(janelafertilizantes,
+                          seasonal = TRUE, 
+                          stepwise = FALSE,
+                          approximation = FALSE)
+
+modeloarima
+```
+<br>
+```{r predicao arima fertilizantes, echo=FALSE}
+previsaoarima <- forecast(modeloarima, h = 36, level = 70)
+
+autoplot(janelafertilizantes, series = "Observado") + 
+  autolayer(modeloarima$fitted, series = "Modelo Arima") + 
+  autolayer(previsaoarima, series = "Previsão Arima", showgap = FALSE) + 
+  xlab("Ano") + 
+  ylab("Produção Fertilizantes") + 
+  ggtitle("Produçaõ Fertilizantes + Predição Arima")
+```
+
+<br>
+Auto Correlação Serial
+```{r acf pacf fertilizantes, echo=FALSE}
+acf  <- ggAcf(janela, lag.max = 60)
+pacf <- ggPacf(janela,lag.max= 60)
+
+grid.arrange(acf, pacf, nrow =2)
+ts_cor(janela)
+```
+
+<br>
+```{r diff lag fertilizantes, echo=FALSE}
+a1 <- autoplot(diff(janelafertilizantes, lag = 1, differences = 1))+
+  ylab("diff(janela)")+
+  ggtitle("Fertilizantes")
+
+a2 <- ggAcf(diff(janelafertilizantes, lag = 1, differences = 1),
+            lag.max = 36)+
+  ggtitle("Fetilizantes")
+
+grid.arrange(a1, a2, nrow =2)
+```
+
+<br><br>
+Testes de Estacionariedade
+  Regra de Ouro: p-valor baixo rejeita H0
+```{r autocorr fertilizantes, echo=FALSE}
+adf.test(diff(janelafertilizantes, lag = 1, differences = 1))
+
+kpss.test(diff(janelafertilizantes, lag = 1, differences = 1))
+
+pp.test(diff(janelafertilizantes, lag = 1, differences = 1))
+
+ts_cor(diff(janelafertilizantes, lag = 1, differences = 1))
+```
+
+<br><br>
+*Considerando o grau de confiança de 95%, rejeitamos H0 devido ao valor de p-value baixo e aceitamos a hipótese alternativa, ou seja, a série é estacionária.*
+
+<br>
+
+*A parte PACF conversa com o modelo Auto Regessivo (AR), e a parte ACF conversa com a parte linear.*
+
+Parte Não Sazonal
+- O PACF fala com a parte auto regressiva AR(p) = 1
+- O ACF fala com a parte MA(q) = 2
+- A defasagem (d) = 1
+--- (p,d,q) = (1,1,2)
+
+Parte Sazonal:
+- P = 1 (ver PCAF linha vertical vermelha)
+- Q = 3 (ver ACF linha vertical Vermelha)
+- D = 1 
+--- (P,D,Q) = (1,1,3)
+
+*Dessa forma, o modelo SARIMA fica (1,1,2) (1,1,3) [12]*
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
